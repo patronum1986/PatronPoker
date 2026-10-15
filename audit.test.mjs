@@ -1,0 +1,15 @@
+import fs from 'node:fs';import vm from 'node:vm';import assert from 'node:assert/strict';
+const src=fs.readFileSync('./server.js','utf8');
+const from=src.indexOf('function emit('),to=src.indexOf("io.on('connection'");
+const code=src.slice(from,to);const events=[];
+const context={randomInt:(a,b)=>a,deck:()=>['As','Ks','Qs','Js','Ts','9s','8s','7s','6s','5s','4s','3s','2s'],io:{to:()=>({emit:(event,payload)=>events.push({event,payload})})},stop:()=>{},emit:()=>{},log:(r,m)=>r.hand.log.push(m),setTimeout:()=>0,clearTimeout:()=>{},console,Math,Date,Set,Map};
+vm.createContext(context);vm.runInContext(code+'\nthis.f={score5,best,compare,finish,act,start,advance,nextTurn};',context);const f=context.f;
+const p=(id,cards,stack=100)=>({id,name:id,cards,stack,bet:0,fold:false,active:true,allin:false,connected:true});
+const run=(name,fn)=>{try{fn();console.log('PASS',name)}catch(e){console.log('FAIL',name,'—',e.message);process.exitCode=1}};
+run('Straight flush recognition',()=>assert.equal(f.score5(['Ah','Kh','Qh','Jh','Th'])[0],8));
+run('Wheel straight recognition',()=>assert.equal(f.score5(['Ah','2c','3d','4s','5h'])[0],4));
+run('False straight flush must not be awarded',()=>assert.notEqual(f.score5(['Ah','Kh','Qh','Jh','Tc'])[0],8));
+run('Two pair kicker with third pair',()=>assert.equal(f.score5(['Ah','Ad','Kh','Kd','Qh'])[3],12));
+run('Side pot settlement: 3 players 20/50/100 invested',()=>{const a=p('a',['As','Ad'],0),b=p('b',['Ks','Kd'],0),c=p('c',['Qs','Qd'],0);a.invested=20;b.invested=50;c.invested=100;const r={players:[a,b,c],config:{seven:false},hand:{board:['2c','3d','4h','8s','9c'],boards:[],bomb:false,deck:[],pot:170,log:[],street:'river',button:0}};f.finish(r);assert.deepEqual([a.stack,b.stack,c.stack],[60,60,50])});
+run('Preflop first actor follows big blind in 3-handed game',()=>{const players=[p('a',[]),p('b',[]),p('c',[])];const r={players,config:{sb:25,bb:50,bomb:false,straddle:false,seconds:30},counter:0,hand:null};f.start(r);assert.equal(r.hand.turn,'a')});
+run('Folded winner does not reveal private cards',()=>{const a=p('a',['As','Kd']),b=p('b',['2c','3d']);a.invested=50;b.invested=50;b.fold=true;const r={players:[a,b],config:{seven:false},hand:{board:[],boards:[],bomb:false,deck:['4c','5c','6c','7c','8c'],pot:100,log:[],street:'preflop',button:0}};f.finish(r);assert.equal(r.hand.showdown.length,0)});
